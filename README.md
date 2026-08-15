@@ -388,6 +388,37 @@ Q1~Q6(영어 근거)은 높게, Q7~Q12(한국어 근거)는 그보다 낮게 나
 docker compose exec api python scripts/seed.py --reset --with-history --profile bulchimbeon
 ```
 
+④ **그 결과를 픽스처로 내보내 git 에 올립니다.** 이 단계가 ③을 한 번으로 끝냅니다.
+
+```bash
+docker compose exec api python scripts/history_fixture.py --profile bulchimbeon
+```
+
+컨테이너 안에 만들어진 파일을 꺼내 커밋합니다.
+
+```bash
+docker compose cp api:/app/seed/bulchimbeon/history.json bulchimbeon-backend/bulchimbeon-api/seed/bulchimbeon/history.json
+```
+
+이후로는 누가 어디서 시드하든 **0원 · 수 초 · 완전히 같은 데모**가 뜹니다.
+
+```bash
+docker compose exec api python scripts/seed.py --reset --profile bulchimbeon --from-fixture
+```
+
+#### 왜 이력을 손으로 짓지 않나요
+
+매칭률·등급·정확도는 발표에서 **우리 파이프라인의 실측**으로 읽힙니다. 손으로 적으면 그
+화면이 근거를 잃습니다. 코퍼스가 성립하는지 보려면 어차피 한 번은 진짜로 돌려야 하므로,
+그 결과를 버리지 않고 고정하는 것뿐입니다. 덤으로 발표 당일의 30분 창·일일 호출 상한·
+API 장애가 변수에서 사라집니다.
+
+픽스처가 옮기지 않는 것이 셋 있습니다. `llm_usage` 는 오늘자 사용량으로 잡혀 **라이브
+질문이 상한에 걸리므로** 제외하고, 공식 Q&A 임베딩은 임포트 때 **지금 모델로 다시**
+만들며(모델이 바뀌면 재사용이 조용히 안 걸립니다), 시각은 상대값으로 적어 임포트가 지금
+기준으로 되돌립니다 — 지표가 `now() - 30일` 창으로 읽기 때문에 절대 시각을 심으면 한 달
+뒤에 화면이 빕니다.
+
 #### 발표장에서 던질 질문
 
 | 질문 | 기대 | 보여 주는 것 |
