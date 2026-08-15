@@ -278,20 +278,27 @@ docker compose down -v   # ⚠️ pgdata·storage 를 모두 지웁니다
 
 **`api` 가 계속 `health: starting` 이고 로그에 `GET /api/health ... 404`**
 
-`api` 이미지가 **낡은 백엔드 커밋으로 빌드된** 것입니다. 헬스 경로는 예전에 `/health`
-였다가 `/api/health` 로 옮겨졌으므로, 서브모듈이 그 이전에 멈춰 있으면 컴포즈의
-헬스체크가 영원히 404 를 받습니다.
-
-`docker compose up` 을 직접 부르면 **서브모듈 정렬 단계를 건너뜁니다.** `deploy.sh` 를
-쓰거나, 최소한 아래를 먼저 돌리세요.
+`api` **이미지**가 낡은 백엔드 소스로 구워진 것입니다. 헬스 경로는 예전에 `/health`
+였다가 `/api/health` 로 옮겨졌으므로, 이미지가 그 이전 소스면 헬스체크가 영원히
+404 를 받습니다. 앱 자체는 멀쩡히 떠 있어서 원인이 잘 안 보입니다.
 
 ```bash
-git submodule update --init --recursive
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/health   # 200 이면 낡은 이미지다
 ```
 
-⚠️ 마이그레이션이 멀쩡히 다 올라가도 이 증상이 납니다 — 스키마와 라우팅은 서로 다른
-시점에 바뀌었기 때문에, "`migrate` 가 성공했으니 최신"이라고 믿으면 안 됩니다.
-확인은 커밋으로 합니다.
+⛔ **`docker compose up -d` 는 이미지가 이미 있으면 다시 빌드하지 않습니다.**
+`git pull` 로 소스를 최신화해도 이미지는 예전 것이 그대로 쓰입니다. 소스를 바꿨으면
+반드시 다시 구워야 합니다 — `deploy.sh` 가 그 일을 합니다.
+
+```bash
+sh scripts/deploy.sh
+```
+
+⚠️ **마이그레이션이 다 올라간 것은 최신이라는 증거가 아닙니다.** 스키마와 라우팅은
+서로 다른 시점에 바뀌었습니다 — `0012` 를 추가한 커밋이 헬스 경로를 옮긴 커밋보다
+오래됐기 때문에, `migrate` 가 `0012` 까지 성공해도 라우팅은 옛 형태일 수 있습니다.
+
+체크아웃이 최신인지는 따로 봅니다. 이쪽이 낡았다면 `git submodule update --init --recursive`.
 
 ```bash
 git -C bulchimbeon-backend log --oneline -1
