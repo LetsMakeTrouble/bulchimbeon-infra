@@ -276,6 +276,27 @@ docker compose down -v   # ⚠️ pgdata·storage 를 모두 지웁니다
 그래도 부족하면 스왑을 조금 붙이거나 메모리를 늘리는 편이 빠릅니다.
 스왑이 0 이면 커널이 OOM 킬 대신 페이지 회수로 겉돌아 **죽지도 않고 멈춘 것처럼** 보입니다.
 
+**`api` 가 계속 `health: starting` 이고 로그에 `GET /api/health ... 404`**
+
+`api` 이미지가 **낡은 백엔드 커밋으로 빌드된** 것입니다. 헬스 경로는 예전에 `/health`
+였다가 `/api/health` 로 옮겨졌으므로, 서브모듈이 그 이전에 멈춰 있으면 컴포즈의
+헬스체크가 영원히 404 를 받습니다.
+
+`docker compose up` 을 직접 부르면 **서브모듈 정렬 단계를 건너뜁니다.** `deploy.sh` 를
+쓰거나, 최소한 아래를 먼저 돌리세요.
+
+```bash
+git submodule update --init --recursive
+```
+
+⚠️ 마이그레이션이 멀쩡히 다 올라가도 이 증상이 납니다 — 스키마와 라우팅은 서로 다른
+시점에 바뀌었기 때문에, "`migrate` 가 성공했으니 최신"이라고 믿으면 안 됩니다.
+확인은 커밋으로 합니다.
+
+```bash
+git -C bulchimbeon-backend log --oneline -1
+```
+
 **`migrate` 가 실패하면 `api` 는 시작하지 않습니다**
 
 의도된 동작입니다(`service_completed_successfully`). 마이그레이션 실패가 앱

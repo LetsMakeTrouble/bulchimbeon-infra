@@ -108,6 +108,11 @@ services:
     #    중복 발화하므로 늘리면 이벤트가 절반만 도착하고 브리핑이 두 번 나간다.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     healthcheck:
+      # ⚠️ 경로는 `app/main.py` 의 `HEALTH_PATH` 와 **한 글자도 다르면 안 된다.**
+      #    예전에는 `/health` 였다가 `/api/health` 로 옮겨졌다(백엔드 `c9b95a7`).
+      #    낡은 서브모듈로 빌드하면 여기가 영원히 404 를 받아 컨테이너가 계속
+      #    `health: starting` 에 머문다 — 앱은 멀쩡히 떠 있어서 원인이 안 보인다.
+      #    `docker compose up` 을 직접 부르면 서브모듈 정렬을 건너뛰니 `deploy.sh` 를 써라.
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status == 200 else 1)\""]
       interval: 10s
       timeout: 5s
