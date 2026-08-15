@@ -172,6 +172,67 @@ cd bulchimbeon-infra
 git submodule update --init --recursive
 ```
 
+### 띄우기
+
+비밀값부터 만듭니다. 스크립트가 `.env.example` 을 복사해 생성 가능한 값 4개를 채우고,
+직접 넣어야 하는 것(`OPENAI_API_KEY`)과 눈으로 확인할 것(공개 도메인)을 짚어줍니다.
+
+```bash
+sh scripts/init-env.sh
+```
+
+이미 값이 있는 키는 **덮어쓰지 않으므로** 몇 번을 다시 돌려도 안전합니다.
+특히 `INTEGRATION_ENCRYPTION_KEY` 는 바뀌면 DB 에 암호화해 둔 Notion·GitHub 토큰을
+복호화할 수 없게 되어 연동을 전부 다시 등록해야 합니다.
+
+필수 값이 다 차면 스크립트가 기동 명령을 알려줍니다.
+
+```bash
+docker compose up -d --build
+```
+
+| 서비스 | 역할 |
+|---|---|
+| `db` | `pgvector/pgvector:pg18`. 호스트 포트를 열지 않습니다 |
+| `migrate` | `alembic upgrade head` 를 돌리고 종료하는 원샷. 여기서 실패하면 `api` 가 시작하지 않습니다 |
+| `api` | FastAPI. 모든 경로가 `/api/v1` 아래에 있습니다 |
+| `web` | 프론트 정적 번들 (nginx) |
+
+### 앞단은 Cloudflare Tunnel 입니다
+
+`api` 와 `web` 은 **루프백에만** 묶여 있어 터널을 거치지 않으면 바깥에서 닿지 않습니다.
+터널이 한 도메인을 받아 `/api/*` 는 `api:8000` 으로, 나머지는 `web:8080` 으로 보냅니다.
+브라우저 입장에서는 프론트와 API 가 같은 오리진이라 CORS 를 타지 않습니다.
+
+프론트 nginx 에 `/api` 프록시 블록이 없는 것이 이 구성의 전제입니다.
+한 번 더 프록시하면 홉만 늘고 버퍼링·타임아웃 설정이 두 군데로 갈리는데,
+**SSE 는 버퍼링 하나만 어긋나도 조용히 멈춥니다.**
+
+구성을 바꾸려면 `.env` 의 `VITE_API_BASE_URL` · `CORS_ORIGINS` · `API_BASE_URL`
+세 값을 **함께** 옮겨야 합니다. 하나만 고치면 기동은 되고 요청만 막혀서 진단이 오래 걸립니다.
+`VITE_API_BASE_URL` 은 빌드 시각에 번들로 박히므로 고쳤다면 `--build` 로 다시 말아야 합니다.
+
+### ⚠️ 프론트 서브모듈은 아직 빌드되지 않습니다
+
+프론트 포인터는 `main` 을 가리키는데, 그 브랜치는 구현이 걷어내진 뼈대라
+`src/main.tsx` 도 `Dockerfile` 도 없습니다. `web` 을 빌드하려면 **로컬에서만**
+배포 브랜치로 옮깁니다.
+
+```bash
+git -C bulchimbeon-frontend fetch origin feat/docker-serving
+git -C bulchimbeon-frontend checkout feat/docker-serving
+```
+
+⛔ 이 상태를 커밋하지 마세요. 이 저장소의 프론트 포인터는 `main` 으로 둡니다.
+`git status` 에 `bulchimbeon-frontend (new commits)` 가 뜨면 그게 신호입니다.
+
+### 백업은 두 가지를 함께 받습니다
+
+- `pgdata` 볼륨 — 질문·답변·청크·임베딩
+- `storage` 볼륨 — 업로드 **원본 파일**
+
+DB 만 백업하면 청크는 남지만 원문은 복구되지 않고, 문서 재인제스트도 불가능해집니다.
+
 ### 서브모듈 최신화
 
 각 서비스 저장소에 새 커밋이 올라왔을 때, 이곳의 포인터를 옮겨주면 됩니다.
