@@ -1,0 +1,142 @@
+# 불침번 전체 스택 — DB · 마이그레이션 · API · 프론트를 한 번에 띄운다.
+#
+#   git submodule update --init --recursive
+#   sh scripts/init-env.sh    # .env 생성 — 비밀값 4개를 만들고 빠진 값을 짚어 준다
+#   docker compose up -d --build
+#
+# 앞단(Cloudflare Tunnel)이 한 도메인을 받아 `/api/*` 는 `api:8000` 으로, 나머지는
+# `web:8080` 으로 보낸다. 두 서비스 모두 **루프백에만** 바인딩되므로 터널을 거치지
+# 않고는 바깥에서 닿지 않는다.
+#
+# ⚠️ **프론트 서브모듈 포인터는 `main` 으로 둔다 — 이건 의도된 상태다.**
+#    다만 `main` 은 구현이 걷어내진 뼈대라 `src/main.tsx` 가 없고 Dockerfile 도 없다.
+#    그래서 `web` 을 빌드하려면 **로컬에서만** 배포 브랜치로 체크아웃한다:
+#
+#      git -C bulchimbeon-frontend fetch origin feat/docker-serving
+#      git -C bulchimbeon-frontend checkout feat/docker-serving
+#
+#    ⛔ 이 상태를 **커밋하지 마라.** 이 저장소의 포인터는 계속 `main` 이어야 한다.
+#       실수로 담겼으면: `git checkout -- bulchimbeon-frontend` (아직 커밋 전),
+#       또는 `git -C bulchimbeon-frontend checkout main` 후 다시 `git add`.
+#       `git status` 에 `bulchimbeon-frontend (new commits)` 가 뜨면 그게 신호다.
+#
+# ⛔ **비밀값에 기본값을 두지 않는다.** `${VAR:?}` 문법이라 안 채우면 compose 가 기동 전에
+#    죽는다. `SECRET_KEY=change-me` 인 채로 조용히 뜨는 것이 최악이다.
+#
+# 백엔드 저장소의 `docker-compose.prod.yml` 과 **동시에 쓰지 마라** — 같은 이름의 스택을
+# 두 번 띄우게 된다. 그쪽은 백엔드만 단독으로 띄울 때 쓰고, 프론트까지 묶는 것은 여기다.
+
+name: bulchimbeon
+
+services:
+  # 마이그레이션은 **별도 원샷 서비스**다. 앱 커맨드에 `alembic && uvicorn` 을 붙이면
+  # 마이그레이션 실패가 앱 재시작 루프에 묻혀 원인이 안 보인다.
+  # 여기서 죽으면 `api` 는 아예 시작하지 않는다 (`service_completed_successfully`).
+  migrate:
+    build: ./bulchimbeon-backend/bulchimbeon-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:?}
+      # alembic 이 앱 설정을 로드하므로 필수 값이 비어 있으면 여기서 먼저 죽는다.
+      SECRET_KEY: ${SECRET_KEY:?}
+      INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:?}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      STORAGE_DIR: /app/storage
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  db:
+    # ⚠️ pg18 로 고정한다. pgvector 는 이 이미지가 0.8.6 을 준다 — `iterative_scan`(0.8.0+)이
+    #    없으면 인덱스는 만들어지고 **검색만 조용히 0건**이 된다.
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:?}
+    volumes:
+      # ⚠️ pg18+ 이미지는 데이터를 메이저 버전별 하위 디렉터리에 둔다. pg16 관행대로
+      #    `/var/lib/postgresql/data` 에 마운트하면 기동이 즉시 실패한다. 부모에 마운트한다.
+      - pgdata:/var/lib/postgresql
+    # ⛔ 포트를 호스트로 열지 않는다. 앱만 내부망으로 붙는다.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build: ./bulchimbeon-backend/bulchimbeon-api
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: ${APP_ENV:-demo}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:?}
+      STORAGE_DIR: /app/storage
+
+      # 알림·연동 링크에 박히는 공개 주소. 비우면 링크가 localhost 를 가리킨다.
+      API_BASE_URL: ${API_BASE_URL:?}
+      SECRET_KEY: ${SECRET_KEY:?}
+      INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:?}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      # ⚠️ 스킴까지 정확히. 쉼표 구분이며 와일드카드(`*`)를 쓰지 마라 —
+      #    `allow_credentials=True` 와 함께면 위험하다.
+      CORS_ORIGINS: ${CORS_ORIGINS:?}
+      # 저장소에 공개된 기본값(`demo1234!`)을 그대로 두지 마라.
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?}
+
+      # 동시성 — 세 값은 **함께** 움직인다. DB 의 max_connections 가 빠듯하면 같이 줄여라.
+      PIPELINE_MAX_CONCURRENCY: ${PIPELINE_MAX_CONCURRENCY:-8}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+    ports:
+      # ⛔ 루프백에만 묶는다. 브라우저는 터널을 거쳐 같은 오리진의 `/api/*` 로만 붙으므로
+      #    이 포트가 바깥에 열릴 이유가 없다. `0.0.0.0` 으로 바꾸면 CORS 검사를
+      #    우회하는 경로가 그대로 인터넷에 열린다.
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      # 업로드 원본이 여기 쌓인다. **이 볼륨을 잃으면 문서 원문이 사라진다** —
+      # DB 만 백업하면 청크·임베딩은 남지만 원본 파일은 복구되지 않는다.
+      - storage:/app/storage
+    # ⛔ `--workers 1` 고정. SSE 구독자 큐가 인메모리이고 APScheduler 가 프로세스마다
+    #    중복 발화하므로 늘리면 이벤트가 절반만 도착하고 브리핑이 두 번 나간다.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status == 200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./bulchimbeon-frontend
+      args:
+        # ⚠️ Vite 의 `import.meta.env.VITE_*` 는 **빌드 시각에 번들로 박히는** 값이다.
+        #    런타임 환경변수로는 절대 안 바뀐다 — 이 값을 고치면 `--build` 로 다시 말아야 한다.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?}
+    # ⚠️ nginx 에 `/api` 프록시 블록이 없는 것은 의도다 — 터널이 `/api/*` 를 `api:8000`
+    #    으로 직접 보낸다. 한 번 더 프록시하면 홉만 늘고 타임아웃·버퍼링 설정이
+    #    두 군데로 갈린다. 특히 SSE 는 버퍼링 하나만 어긋나도 조용히 멈춘다.
+    depends_on:
+      # 정적 파일 서빙이라 API 없이도 뜨지만, 순서를 맞춰 두면 첫 화면이 빈 목록으로
+      # 뜨는 시간을 줄인다. `service_healthy` 가 아니라 `service_started` 인 이유는
+      # API 헬스체크(최대 80초)에 프론트 기동을 묶을 이유가 없기 때문이다.
+      api:
+        condition: service_started
+    ports:
+      # 컨테이너 안은 8080 고정이다 — nginx-unprivileged 가 uid 101 로 돌아 특권 포트를 못 연다.
+      # api 와 마찬가지로 루프백에만 묶는다. 공개는 터널이 맡는다.
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  storage:
