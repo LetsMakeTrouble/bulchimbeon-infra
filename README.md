@@ -174,7 +174,41 @@ git submodule update --init --recursive
 
 ### 띄우기
 
-비밀값부터 만듭니다. 스크립트가 `.env.example` 을 복사해 생성 가능한 값 4개를 채우고,
+배포는 한 줄입니다. 최신화 → 서브모듈 정렬 → `.env` 점검 → 빌드 → 기동을 순서대로 합니다.
+
+```bash
+sh scripts/deploy.sh
+```
+
+| 단계 | 하는 일 |
+|---|---|
+| 1 | 커밋하지 않은 변경이 있으면 멈춥니다 — rebase 가 그것을 밟고 지나가니까요 |
+| 2 | `git pull --rebase` |
+| 3 | 서브모듈을 **커밋에 박힌 핀으로** 되돌립니다 |
+| 4 | `--backend` · `--frontend` 를 줬다면 그 브랜치로 옮깁니다 |
+| 5 | `.env` 점검 — 없으면 만들고, 빈 칸이 남았으면 멈춥니다 |
+| 6 | `docker compose build` 후 `up -d` |
+
+```bash
+sh scripts/deploy.sh --frontend feat/docker-serving   # 서브모듈 브랜치 지정
+sh scripts/deploy.sh --no-pull                        # 지금 받아 둔 상태 그대로 빌드
+sh scripts/deploy.sh --help
+```
+
+옵션을 주지 않으면 **이 저장소 커밋에 기록된 조합 그대로** 뜹니다.
+브랜치를 지정하면 끝에서 포인터가 움직였다고 경고하는데, 스크립트는 `git add` 를 하지
+않으니 그 상태만 커밋하지 않으면 됩니다.
+
+| 서비스 | 역할 |
+|---|---|
+| `db` | `pgvector/pgvector:pg18`. 호스트 포트를 열지 않습니다 |
+| `migrate` | `alembic upgrade head` 를 돌리고 종료하는 원샷. 여기서 실패하면 `api` 가 시작하지 않습니다 |
+| `api` | FastAPI. 모든 경로가 `/api/v1` 아래에 있습니다 |
+| `web` | 프론트 정적 번들 (nginx) |
+
+#### `.env` 만 따로 만들려면
+
+`deploy.sh` 5단계가 부르는 것과 같은 스크립트입니다. 생성 가능한 비밀값 4개를 채우고,
 직접 넣어야 하는 것(`OPENAI_API_KEY`)과 눈으로 확인할 것(공개 도메인)을 짚어줍니다.
 
 ```bash
@@ -184,19 +218,6 @@ sh scripts/init-env.sh
 이미 값이 있는 키는 **덮어쓰지 않으므로** 몇 번을 다시 돌려도 안전합니다.
 특히 `INTEGRATION_ENCRYPTION_KEY` 는 바뀌면 DB 에 암호화해 둔 Notion·GitHub 토큰을
 복호화할 수 없게 되어 연동을 전부 다시 등록해야 합니다.
-
-필수 값이 다 차면 스크립트가 기동 명령을 알려줍니다.
-
-```bash
-docker compose up -d --build
-```
-
-| 서비스 | 역할 |
-|---|---|
-| `db` | `pgvector/pgvector:pg18`. 호스트 포트를 열지 않습니다 |
-| `migrate` | `alembic upgrade head` 를 돌리고 종료하는 원샷. 여기서 실패하면 `api` 가 시작하지 않습니다 |
-| `api` | FastAPI. 모든 경로가 `/api/v1` 아래에 있습니다 |
-| `web` | 프론트 정적 번들 (nginx) |
 
 ### 앞단은 Cloudflare Tunnel 입니다
 
@@ -215,16 +236,18 @@ docker compose up -d --build
 ### ⚠️ 프론트 서브모듈은 아직 빌드되지 않습니다
 
 프론트 포인터는 `main` 을 가리키는데, 그 브랜치는 구현이 걷어내진 뼈대라
-`src/main.tsx` 도 `Dockerfile` 도 없습니다. `web` 을 빌드하려면 **로컬에서만**
-배포 브랜치로 옮깁니다.
+`src/main.tsx` 도 `Dockerfile` 도 없습니다. 그래서 옵션 없이 `deploy.sh` 를 돌리면
+4단계에서 이렇게 멈춥니다.
 
-```bash
-git -C bulchimbeon-frontend fetch origin feat/docker-serving
-git -C bulchimbeon-frontend checkout feat/docker-serving
+```
+⛔ bulchimbeon-frontend 에 Dockerfile 이 없다 — 이 브랜치로는 web 을 빌드할 수 없다.
+   배포용 브랜치를 지정해라:
+     sh scripts/deploy.sh --frontend feat/docker-serving
 ```
 
-⛔ 이 상태를 커밋하지 마세요. 이 저장소의 프론트 포인터는 `main` 으로 둡니다.
-`git status` 에 `bulchimbeon-frontend (new commits)` 가 뜨면 그게 신호입니다.
+⛔ 그렇게 옮긴 상태를 커밋하지 마세요. 이 저장소의 프론트 포인터는 `main` 으로 둡니다.
+`git status` 에 `bulchimbeon-frontend` 가 뜨면 그게 신호이고,
+`git submodule update --init --recursive` 로 되돌립니다.
 
 ### 백업은 두 가지를 함께 받습니다
 
