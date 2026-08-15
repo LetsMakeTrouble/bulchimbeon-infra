@@ -250,16 +250,12 @@ docker compose exec api python scripts/seed.py --reset --with-history
 | `jisoo@globalmart.example` | 지수 | 질문자 (`asker`) | 질문하기 · 내 질문 이력 · ✅/❌ 크로스체크 |
 | `minjun@globalmart.example` | 민준 | 질문자 (`asker`) | 위와 같음 (두 번째 질문자) |
 
-**비밀번호는 셋 다 `.env` 의 `DEMO_PASSWORD` 값입니다.** 저장소에 적힌 기본값
-(`demo1234!`)이 아닙니다 — `init-env.sh` 가 만든 `.env` 에 들어 있는 값을 보세요.
+**비밀번호는 셋 다 `demo1234!` 입니다.** 심사·시연용 고정값이라 `.env` 의
+`DEMO_PASSWORD` 도 이 값으로 둡니다 (`init-env.sh` 는 이 키를 무작위로 만들지 않습니다).
 
-```bash
-grep DEMO_PASSWORD .env
-```
-
-⛔ 공개 도메인에 붙은 인스턴스에서 `DEMO_PASSWORD` 를 기본값으로 두지 마세요.
-저장소가 공개라 "공개된 비밀번호 + 공개된 주소"가 되고, 담당자 계정은 임계값 변경 ·
-문서 삭제 · 지침 교체 권한을 가집니다.
+⚠️ 공개된 비밀번호이므로 **담당자 계정에 누구나 로그인할 수 있습니다.** 담당자는 임계값
+변경 · 문서 삭제 · 지침 교체 권한을 가지니, 시연이 끝나면 인스턴스를 내리거나
+`DEMO_PASSWORD` 를 바꿔 재시드하세요.
 
 로그인은 프론트 `/login` 입니다. 회원가입(`/signup`)으로 새 계정을 만들 수도 있지만,
 그 계정은 어느 프로젝트에도 속하지 않으므로 담당자에게 초대 코드를 받아 참여해야
@@ -268,6 +264,69 @@ Mike 로 로그인해 **멤버** 화면에서도 확인할 수 있습니다.
 
 💡 시연은 **두 브라우저 프로필**(또는 일반 창 + 시크릿 창)로 지수와 Mike 를 동시에
 띄워 두면 편합니다. 질문 → 확인 카드 도착 → 30초 판단이 한 화면 전환으로 이어집니다.
+
+#### 이미 다른 비밀번호로 시드한 서버라면
+
+⚠️ **`.env` 만 고쳐서는 바뀌지 않습니다.** `DEMO_PASSWORD` 는 **시드가 도는 순간에만**
+읽혀 해시로 `users.password_hash` 에 박힙니다. 이후로는 로그인이 DB 의 해시만 보므로,
+env 를 고치고 컨테이너를 다시 띄워도 예전 비밀번호가 그대로 통합니다.
+
+먼저 `.env` 를 맞추고 `api` 를 새 env 로 다시 만듭니다. `docker compose exec` 는
+**컨테이너가 만들어질 때의 env** 를 물려주므로, 이 단계를 건너뛰면 시드가 예전 값을
+다시 해시합니다.
+
+```bash
+sed -i 's/^DEMO_PASSWORD=.*/DEMO_PASSWORD=demo1234!/' .env
+```
+
+```bash
+docker compose up -d api
+```
+
+여기서 갈립니다. **`--with-history` 로 채운 이력이 있느냐**가 기준입니다.
+
+**이력이 없거나, 다시 채워도 되면 — 재시드**
+
+`--reset` 은 데모 프로젝트와 그 하위 데이터를 지우고 다시 넣습니다. 유저는 지우지 않고
+같은 이메일에 새 해시를 덮어씁니다.
+
+```bash
+docker compose exec api python scripts/seed.py --reset
+```
+
+**이력을 지켜야 하면 — 비밀번호만 교체**
+
+25~30분·$1.3 짜리 이력을 날리지 않고 세 계정의 해시만 갈아끼웁니다. 프로젝트·질문·
+지표는 그대로입니다.
+
+```bash
+docker compose exec api python -c "
+import asyncio
+from sqlalchemy import update
+from app.core.security import hash_password
+from app.database import AsyncSessionLocal
+from app.models.user import User
+
+EMAILS = ['mike@devcorp.example', 'jisoo@globalmart.example', 'minjun@globalmart.example']
+
+async def main():
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            update(User).where(User.email.in_(EMAILS)).values(password_hash=hash_password('demo1234!'))
+        )
+        await db.commit()
+        print(f'{result.rowcount}명 교체됨')
+
+asyncio.run(main())
+"
+```
+
+`3명 교체됨` 이 아니면 시드가 아직 안 돌았거나 이메일이 다른 것입니다 — 그때는 위의
+재시드 경로로 가세요. 확인은 로그인으로 합니다.
+
+```bash
+curl -s -X POST localhost:8000/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"jisoo@globalmart.example","password":"demo1234!"}' -o /dev/null -w '%{http_code}\n'
+```
 
 ### 앞단은 Cloudflare Tunnel 입니다
 

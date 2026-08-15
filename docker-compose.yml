@@ -88,8 +88,10 @@ services:
       # ⚠️ 스킴까지 정확히. 쉼표 구분이며 와일드카드(`*`)를 쓰지 마라 —
       #    `allow_credentials=True` 와 함께면 위험하다.
       CORS_ORIGINS: ${CORS_ORIGINS:?}
-      # 저장소에 공개된 기본값(`demo1234!`)을 그대로 두지 마라.
-      DEMO_PASSWORD: ${DEMO_PASSWORD:?}
+      # 심사·시연용 고정 공개값이다. `.env` 가 비어 있어도 같은 값으로 뜬다 —
+      # 안내 문서와 어긋나는 상태가 생기지 않게 기본값을 여기에도 박아 둔다.
+      # ⚠️ 시드 시각에만 쓰인다(비밀번호 해시). 바꿔도 이미 만들어진 계정은 그대로다.
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-demo1234!}
 
       # 동시성 — 세 값은 **함께** 움직인다. DB 의 max_connections 가 빠듯하면 같이 줄여라.
       PIPELINE_MAX_CONCURRENCY: ${PIPELINE_MAX_CONCURRENCY:-8}

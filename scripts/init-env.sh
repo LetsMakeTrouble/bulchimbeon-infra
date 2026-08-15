@@ -79,7 +79,10 @@ INTEGRATION_ENCRYPTION_KEY OPENAI_API_KEY DEMO_PASSWORD
 VITE_API_BASE_URL CORS_ORIGINS API_BASE_URL'
 
 # 이 중 생성 가능한 것만 자동으로 채운다.
-GENERATED='POSTGRES_PASSWORD SECRET_KEY INTEGRATION_ENCRYPTION_KEY DEMO_PASSWORD'
+#
+# ⚠️ `DEMO_PASSWORD` 는 여기 없다. 심사·시연용 **고정 공개값**(`demo1234!`)이라 무작위로
+#    만들면 안내 문서와 어긋난다 — 값은 `.env.example` 템플릿이 들고 있다.
+GENERATED='POSTGRES_PASSWORD SECRET_KEY INTEGRATION_ENCRYPTION_KEY'
 
 # --------------------------------------------------------------------------------------
 # 값 생성
@@ -100,7 +103,6 @@ generate() {
     POSTGRES_PASSWORD)          openssl rand -hex 24 ;;
     SECRET_KEY)                 openssl rand -hex 32 ;;
     INTEGRATION_ENCRYPTION_KEY) openssl rand -base64 32 | tr -d '\n' ;;
-    DEMO_PASSWORD)              openssl rand -base64 18 | tr -d '\n' ;;
     *) echo "generate: 모르는 키 $1" >&2; return 1 ;;
   esac
 }
