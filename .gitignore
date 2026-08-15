@@ -1,0 +1,13 @@
+# 실제 환경변수 파일 — 비밀값이 들어가므로 절대 커밋하지 않습니다.
+.env
+.env.*
+!.env.example
+
+# OS · 편집기
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+*.log

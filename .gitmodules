@@ -1,0 +1,6 @@
+[submodule "bulchimbeon-backend"]
+	path = bulchimbeon-backend
+	url = https://github.com/LetsMakeTrouble/bulchimbeon-backend.git
+[submodule "bulchimbeon-frontend"]
+	path = bulchimbeon-frontend
+	url = https://github.com/LetsMakeTrouble/bulchimbeon-frontend.git
