@@ -225,6 +225,50 @@ sh scripts/init-env.sh
 특히 `INTEGRATION_ENCRYPTION_KEY` 는 바뀌면 DB 에 암호화해 둔 Notion·GitHub 토큰을
 복호화할 수 없게 되어 연동을 전부 다시 등록해야 합니다.
 
+### 데모 계정으로 로그인
+
+띄운 직후의 DB 는 **비어 있습니다.** `deploy.sh` 는 시드를 돌리지 않으므로 계정도
+프로젝트도 없습니다. 데모 데이터는 백엔드 시드 스크립트가 넣습니다.
+
+```bash
+docker compose exec api python scripts/seed.py --reset
+```
+
+이력·지표까지 채우려면 `--with-history` 를 더합니다. 실 LLM 을 전제하고 25~30분,
+약 $1.3 이 듭니다. **발표 당일 말고 전날 채워 두세요.**
+
+```bash
+docker compose exec api python scripts/seed.py --reset --with-history
+```
+
+시드가 만드는 계정은 셋입니다. 프로젝트는 `GlobalMart JP Launch` 하나이고,
+세 계정 모두 그 프로젝트에 이미 들어가 있습니다.
+
+| 이메일 | 이름 | 역할 | 화면에서 보이는 것 |
+|---|---|---|---|
+| `mike@devcorp.example` | Mike Chen | 담당자 (`answerer`) | 확인 카드 인박스 · 브리핑 · 문서함 · 지표 · 설정 |
+| `jisoo@globalmart.example` | 지수 | 질문자 (`asker`) | 질문하기 · 내 질문 이력 · ✅/❌ 크로스체크 |
+| `minjun@globalmart.example` | 민준 | 질문자 (`asker`) | 위와 같음 (두 번째 질문자) |
+
+**비밀번호는 셋 다 `.env` 의 `DEMO_PASSWORD` 값입니다.** 저장소에 적힌 기본값
+(`demo1234!`)이 아닙니다 — `init-env.sh` 가 만든 `.env` 에 들어 있는 값을 보세요.
+
+```bash
+grep DEMO_PASSWORD .env
+```
+
+⛔ 공개 도메인에 붙은 인스턴스에서 `DEMO_PASSWORD` 를 기본값으로 두지 마세요.
+저장소가 공개라 "공개된 비밀번호 + 공개된 주소"가 되고, 담당자 계정은 임계값 변경 ·
+문서 삭제 · 지침 교체 권한을 가집니다.
+
+로그인은 프론트 `/login` 입니다. 회원가입(`/signup`)으로 새 계정을 만들 수도 있지만,
+그 계정은 어느 프로젝트에도 속하지 않으므로 담당자에게 초대 코드를 받아 참여해야
+데모 데이터가 보입니다. 초대 코드는 시드 로그의 `invite_code=...` 에 찍히고,
+Mike 로 로그인해 **멤버** 화면에서도 확인할 수 있습니다.
+
+💡 시연은 **두 브라우저 프로필**(또는 일반 창 + 시크릿 창)로 지수와 Mike 를 동시에
+띄워 두면 편합니다. 질문 → 확인 카드 도착 → 30초 판단이 한 화면 전환으로 이어집니다.
+
 ### 앞단은 Cloudflare Tunnel 입니다
 
 cloudflared 는 **다른 LXC 에서 LAN 을 건너옵니다.** 그래서 `api` 와 `web` 의 포트를
