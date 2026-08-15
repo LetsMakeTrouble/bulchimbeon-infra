@@ -140,7 +140,19 @@ sh scripts/init-env.sh
 step "6/6  빌드 · 기동"
 
 # 빌드를 먼저 끝낸다. 실패하면 돌고 있는 컨테이너를 건드리기 전에 멈춘다.
-docker compose build
+#
+# ⚠️ **서비스를 하나씩 부른다.** `docker compose build` 는 세 이미지를 **동시에** 만드는데,
+#    그러면 백엔드의 `chown -R /app`(I/O)과 프론트의 `npm ci`·`vite build`(CPU·메모리)가
+#    같은 순간에 물린다. 작은 LXC·VM 에서는 이때 메모리가 천장을 치고, 스왑이 없으면
+#    커널이 OOM 킬 대신 페이지 회수로 겉돌아 **그대로 멈춘 것처럼 보인다.**
+#    한 번에 하나면 피크가 낮아진다. 캐시는 그대로 쓰므로 총 시간은 거의 같다.
+#
+# `migrate` 는 `api` 와 빌드 컨텍스트가 같아 뒤에 두면 전부 캐시 히트다.
+for svc in api web migrate; do
+  echo "· build $svc"
+  docker compose build "$svc"
+done
+
 docker compose up -d
 
 echo

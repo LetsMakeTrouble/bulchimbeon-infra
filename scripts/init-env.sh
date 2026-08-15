@@ -196,7 +196,9 @@ fi
 echo "✅ 필수 10개가 모두 찼다. 기동할 수 있다:"
 echo
 if [ "$TARGET_ARG" = ".env" ]; then
-  echo "   docker compose up -d --build"
+  # deploy.sh 를 권한다 — 이미지를 하나씩 빌드해서 메모리 피크가 낮다.
+  # `docker compose build` 는 세 이미지를 동시에 만들어 작은 서버에서 천장을 친다.
+  echo "   sh scripts/deploy.sh --no-pull"
 else
   echo "   docker compose --env-file $TARGET_ARG up -d --build"
 fi

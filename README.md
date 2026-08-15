@@ -187,7 +187,13 @@ sh scripts/deploy.sh
 | 3 | 서브모듈을 **커밋에 박힌 핀으로** 되돌립니다 |
 | 4 | `--backend` · `--frontend` 를 줬다면 그 브랜치로 옮깁니다 |
 | 5 | `.env` 점검 — 없으면 만들고, 빈 칸이 남았으면 멈춥니다 |
-| 6 | `docker compose build` 후 `up -d` |
+| 6 | 이미지를 **하나씩** 빌드한 뒤 `up -d` |
+
+6단계에서 서비스를 한 번에 하나씩 부르는 건 취향이 아닙니다. `docker compose build` 는
+세 이미지를 동시에 만드는데, 그러면 백엔드의 `chown -R /app`(I/O)과 프론트의
+`npm ci`·`vite build`(CPU·메모리)가 같은 순간에 물립니다. 메모리가 빠듯한 LXC·VM 에서는
+이때 천장을 치고, **스왑이 없으면 커널이 OOM 킬 대신 페이지 회수로 겉돌아
+멈춘 것처럼 보입니다.** 캐시는 그대로 쓰므로 총 시간은 거의 같습니다.
 
 ```bash
 sh scripts/deploy.sh --frontend feat/docker-serving   # 서브모듈 브랜치 지정
@@ -248,6 +254,36 @@ sh scripts/init-env.sh
 ⛔ 그렇게 옮긴 상태를 커밋하지 마세요. 이 저장소의 프론트 포인터는 `main` 으로 둡니다.
 `git status` 에 `bulchimbeon-frontend` 가 뜨면 그게 신호이고,
 `git submodule update --init --recursive` 로 되돌립니다.
+
+### 막혔을 때
+
+**`password authentication failed for user "bulchimbeon"`**
+
+`POSTGRES_PASSWORD` 는 `pgdata` 볼륨이 **처음 만들어질 때만** 적용됩니다.
+볼륨이 이미 있으면 Postgres 가 `Skipping initialization` 하고 넘어가므로
+`.env` 를 새로 만들어도 DB 안의 비밀번호는 예전 것이 그대로 남습니다.
+
+```bash
+docker compose down -v   # ⚠️ pgdata·storage 를 모두 지웁니다
+```
+
+운영 데이터가 쌓인 뒤라면 볼륨을 지우지 말고 `.env` 의 `POSTGRES_PASSWORD` 를
+예전 값으로 되돌리세요.
+
+**빌드 중 CPU·메모리가 100% 에서 멈춥니다**
+
+`vite build` 구간이 피크입니다. `deploy.sh` 는 이미 이미지를 하나씩 빌드하지만,
+그래도 부족하면 스왑을 조금 붙이거나 메모리를 늘리는 편이 빠릅니다.
+스왑이 0 이면 커널이 OOM 킬 대신 페이지 회수로 겉돌아 **죽지도 않고 멈춘 것처럼** 보입니다.
+
+**`migrate` 가 실패하면 `api` 는 시작하지 않습니다**
+
+의도된 동작입니다(`service_completed_successfully`). 마이그레이션 실패가 앱
+재시작 루프에 묻히면 원인이 안 보이기 때문에, 거기서 멈추고 로그를 남깁니다.
+
+```bash
+docker compose logs migrate
+```
 
 ### 백업은 두 가지를 함께 받습니다
 
