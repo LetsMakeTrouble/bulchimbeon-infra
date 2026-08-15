@@ -328,6 +328,77 @@ asyncio.run(main())
 curl -s -X POST localhost:8000/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"jisoo@globalmart.example","password":"demo1234!"}' -o /dev/null -w '%{http_code}\n'
 ```
 
+### 데모가 둘입니다 — 불침번 자체 데모
+
+기본 데모(`GlobalMart JP Launch`) 옆에 **불침번 자신을 지식으로 삼는 프로젝트**를 하나 더
+띄울 수 있습니다. 지식이 이 저장소의 실제 문서라서, 심사위원이 방금 본 시스템에 대해
+그대로 물어볼 수 있습니다.
+
+| | 기본 (`globalmart`) | 불침번 (`bulchimbeon`) |
+|---|---|---|
+| 프로젝트 | GlobalMart JP Launch | Bulchimbeon Platform |
+| 지식 | 가상 커머스 API 문서 4개 (영어) | 불침번 문서 5개 — **프론트 영어 · 백엔드 한국어** |
+| 담당자 | Mike Chen | Alex Rivera (`alex@bulchimbeon.example`) |
+| 질문자 | 지수 · 민준 | 같은 계정 |
+| 임계값 | M-1 실측값 | 같은 값에서 시작 (필요하면 이 프로젝트만 조정) |
+
+두 프로젝트는 서로를 밀어내지 않습니다. `projects.settings` 도 일일 LLM 호출 상한 집계도
+**프로젝트별**이라, 한쪽을 조정하거나 이력을 채워도 다른 쪽은 그대로입니다. 로그인하면
+프로젝트 목록에 둘 다 보입니다.
+
+**혼합 언어가 핵심입니다.** 파이프라인은 한국어 질문을 영어로 번역해 검색하므로, 영어
+문서는 축이 같고 한국어 문서는 교차언어 매칭이 됩니다. 그래서 "액세스 토큰은 몇 분
+유효한가요"가 🔴 **충돌**로 떨어집니다 — 영어 프론트 가이드는 30분, 한국어 운영 규칙은
+60분이라고 적혀 있고, 문서가 두 언어로 나뉜 팀에서 실제로 생기는 어긋남입니다.
+
+#### 세팅 순서
+
+이 데모는 백엔드 브랜치에 있습니다. 아직 `main` 에 병합하지 않았으므로 브랜치를 지정해
+배포합니다 (이미지를 다시 굽습니다).
+
+```bash
+sh scripts/deploy.sh --backend claude/demo-bulchimbeon-profile
+```
+
+① 프로젝트·문서만 먼저 넣습니다. 인제스트 임베딩만 쓰므로 몇 센트, 1분 안쪽입니다.
+
+```bash
+docker compose exec api python scripts/seed.py --reset --profile bulchimbeon
+```
+
+② **이력을 돌리기 전에 검색 점수를 잽니다.** 교차언어 유사도가 `similarity_floor`(0.444)
+아래로 내려가면 한국어 근거 질문이 전부 강제 🔴 `no_evidence` 가 되는데, 그걸 30분·$1.2
+짜리 이력을 다 돌린 뒤에 알게 되면 그 시간을 잃습니다. 이 측정은 질문당 호출 2회라
+전부 합쳐도 몇 센트입니다.
+
+```bash
+docker compose exec api python scripts/probe_seed_docs.py --profile bulchimbeon --answerer alex@bulchimbeon.example
+```
+
+Q1~Q6(영어 근거)은 높게, Q7~Q12(한국어 근거)는 그보다 낮게 나오는 것이 정상입니다.
+**판정 기준은 `sim_raw` 가 0.444 를 넘느냐** 하나입니다. 넘으면 ③으로 가고, 한국어 계열이
+그 아래로 내려가면 `scripts/demo_profiles.py` 의 `BULCHIMBEON.settings_overrides` 에
+`{"similarity_floor": <낮춘 값>}` 을 넣고 ①부터 다시 합니다 — **이 프로젝트에만** 적용되고
+기본 데모의 실측값은 건드리지 않습니다.
+
+③ 이력·지표를 채웁니다. 질문 109건 ≈ 327 호출, 25~30분, 약 $1.2 입니다.
+**발표 당일 말고 전날 돌리세요.**
+
+```bash
+docker compose exec api python scripts/seed.py --reset --with-history --profile bulchimbeon
+```
+
+#### 발표장에서 던질 질문
+
+| 질문 | 기대 | 보여 주는 것 |
+|---|---|---|
+| VITE_API_BASE_URL 을 바꾸면 컨테이너만 다시 시작해도 반영되나요? | 🟢 즉답 | 근거 인용과 매칭률 |
+| 액세스 토큰은 몇 분 동안 유효한가요? | 🔴 충돌 | 영어·한국어 문서가 어긋난 것을 잡아 담당자에게 넘김 |
+| 모바일 앱은 언제 출시되나요? | 🔴 근거 없음 | 지어내지 않고 보류 |
+
+이 셋의 **원문은 이력에서 빼 두었습니다.** 이력이 미리 던지면 발표 당일에는 이미 처리된
+질문이 되거나 재사용 경로로 빠져 매칭률·인용이 사라집니다.
+
 ### 앞단은 Cloudflare Tunnel 입니다
 
 cloudflared 는 **다른 LXC 에서 LAN 을 건너옵니다.** 그래서 `api` 와 `web` 의 포트를
