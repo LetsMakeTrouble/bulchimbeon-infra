@@ -337,6 +337,24 @@ cloudflared 는 **다른 LXC 에서 LAN 을 건너옵니다.** 그래서 `api` �
 터널이 한 도메인을 받아 `/api/*` 는 `api:8000` 으로, 나머지는 `web:8080` 으로 보냅니다.
 브라우저 입장에서는 프론트와 API 가 같은 오리진이라 CORS 를 타지 않습니다.
 
+cloudflared 쪽 ingress 는 이렇게 생겼습니다. ⚠️ **`/api/` 규칙이 catch-all 보다 위**에
+있어야 하고, 주소는 `localhost` 가 아니라 도커 호스트의 **LAN IP** 입니다 — cloudflared 가
+다른 LXC 에서 건너오기 때문입니다.
+
+```yaml
+ingress:
+  - hostname: 공개도메인
+    path: ^/api/
+    service: http://<도커호스트 LAN IP>:8000
+  - hostname: 공개도메인
+    service: http://<도커호스트 LAN IP>:8080
+  - service: http_status:404
+```
+
+대시보드(Zero Trust → Networks → Tunnels → Public Hostnames)로 관리한다면 같은 호스트명에
+Path `^/api/` 항목을 하나 더 만들고 기존 항목보다 위로 올리면 같은 결과입니다.
+이 규칙이 빠지면 **로그인이 조용히 실패합니다** — 아래 「막혔을 때」를 보세요.
+
 프론트 nginx 에 `/api` 프록시 블록이 없는 것이 이 구성의 전제입니다.
 한 번 더 프록시하면 홉만 늘고 버퍼링·타임아웃 설정이 두 군데로 갈리는데,
 **SSE 는 버퍼링 하나만 어긋나도 조용히 멈춥니다.**
@@ -362,6 +380,60 @@ cloudflared 는 **다른 LXC 에서 LAN 을 건너옵니다.** 그래서 `api` �
 `git submodule update --init --recursive` 로 되돌립니다.
 
 ### 막혔을 때
+
+**로그인 화면에 "이메일 또는 비밀번호를 확인해 주세요" 만 계속 뜹니다**
+
+⚠️ **이 문구는 비밀번호가 틀렸다는 뜻이 아닙니다.** 프론트 로그인 화면이 모든 예외를
+`catch` 하나로 뭉개기 때문에 네트워크 실패·404·405·500 도 전부 같은 문장으로 나옵니다.
+그래서 **요청이 API 까지 갔는지부터** 갈라야 합니다. 세 갈래이고 원인이 전부 다릅니다.
+
+① 서버 안에서 API 를 직접 두드립니다 — 터널·프론트를 건너뜁니다.
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/api/v1/auth/login -X POST -H 'Content-Type: application/json' -d '{"email":"jisoo@globalmart.example","password":"demo1234!"}'
+```
+
+`401` 이면 계정 문제입니다 — 아래 ②. `200` 인데 브라우저에서만 실패하면 경로 문제 ③.
+
+② 계정이 있는지, 해시가 `demo1234!` 인지 한 번에 봅니다.
+
+```bash
+docker compose exec api python -c "
+import asyncio
+from sqlalchemy import select
+from app.core.security import verify_password
+from app.database import AsyncSessionLocal
+from app.models.user import User
+
+async def main():
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(select(User.email, User.password_hash))).all()
+        print(f'유저 {len(rows)}명')
+        for email, digest in rows:
+            print(' ', email, '→ demo1234! 맞음' if verify_password('demo1234!', digest) else '→ demo1234! 아님')
+
+asyncio.run(main())
+"
+```
+
+`유저 0명` 이면 **시드가 안 돌았습니다** — `deploy.sh` 는 시드를 돌리지 않습니다.
+「데모 계정으로 로그인」의 시드 명령을 실행하세요. `아님` 이면 예전 `DEMO_PASSWORD` 로
+해시된 것이니 같은 절의 해시 교체 명령을 쓰세요.
+
+③ 브라우저가 받는 것을 봅니다. **`content-type` 이 판별점입니다.**
+
+```bash
+curl -si https://공개도메인/api/health | head -5
+```
+
+- `application/json` → 정상. 여기까지 왔다면 ②로 돌아가세요.
+- `text/html` 200 → 터널이 `/api/*` 를 프론트 nginx 로 보내고 있습니다. nginx 가 SPA
+  폴백으로 `index.html` 을 200 으로 돌려주는 것이고, POST 는 `405 Not Allowed` 가 됩니다.
+  **로그인 요청이 FastAPI 에 도달조차 못 합니다.** 터널 ingress 에 `/api/` 규칙이
+  빠졌거나 catch-all 아래에 있는 것입니다 — 앞 절의 ingress 예시를 보세요.
+
+⛔ 이걸 프론트 nginx 에 `/api` 프록시 블록을 넣어 우회하지 마세요. 홉이 늘고 버퍼링·
+타임아웃 설정이 두 군데로 갈리는데, **SSE 는 버퍼링 하나만 어긋나도 조용히 멈춥니다.**
 
 **`password authentication failed for user "bulchimbeon"`**
 
