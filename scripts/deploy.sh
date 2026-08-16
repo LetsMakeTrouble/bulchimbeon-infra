@@ -2,8 +2,8 @@
 # 배포 한 방 — 최신화 → 서브모듈 정렬 → .env 점검 → 이미지 빌드 → 기동.
 #
 #   sh scripts/deploy.sh                                  # 커밋에 박힌 서브모듈 핀 그대로
-#   sh scripts/deploy.sh --frontend feat/docker-serving   # 프론트만 다른 브랜치로
-#   sh scripts/deploy.sh --backend main --frontend woojin  # 둘 다 지정
+#   sh scripts/deploy.sh --frontend woojin                # 프론트만 다른 브랜치로
+#   sh scripts/deploy.sh --backend main --frontend main   # 둘 다 지정
 #   sh scripts/deploy.sh --no-pull                        # 지금 받아 둔 상태 그대로 빌드만
 #
 # ⛔ **`--backend` / `--frontend` 로 옮긴 상태를 커밋하지 마라.** 서브모듈 핀은 이 저장소의
@@ -118,14 +118,16 @@ fi
 if [ -n "$BACKEND_REF" ];  then checkout_ref bulchimbeon-backend  "$BACKEND_REF"; fi
 if [ -n "$FRONTEND_REF" ]; then checkout_ref bulchimbeon-frontend "$FRONTEND_REF"; fi
 
-# 프론트 `main` 은 구현이 걷어내진 뼈대라 Dockerfile 이 없다. 여기서 막지 않으면
-# 몇 분 뒤 docker 가 뱉는 "failed to read dockerfile" 만 보고 원인을 되짚어야 한다.
+# Dockerfile 이 없는 참조로는 web 을 빌드할 수 없다. 여기서 막지 않으면 몇 분 뒤 docker 가
+# 뱉는 "failed to read dockerfile" 만 보고 원인을 되짚어야 한다. (`main` 은 프론트 PR #2
+# 이후 Dockerfile 을 갖고 있으므로, 여기 걸린다면 `--frontend` 로 지정한 참조가 옛것이거나
+# 서브모듈이 체크아웃되지 않은 것이다.)
 if [ ! -f bulchimbeon-frontend/Dockerfile ]; then
   echo
-  echo "⛔ bulchimbeon-frontend 에 Dockerfile 이 없다 — 이 브랜치로는 web 을 빌드할 수 없다." >&2
+  echo "⛔ bulchimbeon-frontend 에 Dockerfile 이 없다 — 이 참조로는 web 을 빌드할 수 없다." >&2
   echo "   현재: $(git -C bulchimbeon-frontend log --oneline -1 2>/dev/null || echo '체크아웃 안 됨')" >&2
-  echo "   배포용 브랜치를 지정해라:" >&2
-  echo "     sh scripts/deploy.sh --frontend feat/docker-serving" >&2
+  echo "   옵션 없이 돌리거나(커밋에 박힌 핀 사용), Dockerfile 이 있는 참조를 지정해라:" >&2
+  echo "     sh scripts/deploy.sh --frontend main" >&2
   exit 1
 fi
 

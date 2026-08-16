@@ -196,7 +196,7 @@ sh scripts/deploy.sh
 멈춘 것처럼 보입니다.** 캐시는 그대로 쓰므로 총 시간은 거의 같습니다.
 
 ```bash
-sh scripts/deploy.sh --frontend feat/docker-serving   # 서브모듈 브랜치 지정
+sh scripts/deploy.sh --frontend woojin                # 서브모듈 브랜치 지정
 sh scripts/deploy.sh --no-pull                        # 지금 받아 둔 상태 그대로 빌드
 sh scripts/deploy.sh --help
 ```
@@ -465,21 +465,19 @@ Path `^/api/` 항목을 하나 더 만들고 기존 항목보다 위로 올리�
 세 값을 **함께** 옮겨야 합니다. 하나만 고치면 기동은 되고 요청만 막혀서 진단이 오래 걸립니다.
 `VITE_API_BASE_URL` 은 빌드 시각에 번들로 박히므로 고쳤다면 `--build` 로 다시 말아야 합니다.
 
-### ⚠️ 프론트 서브모듈은 아직 빌드되지 않습니다
+### 서브모듈 핀은 "조합"입니다
 
-프론트 포인터는 `main` 을 가리키는데, 그 브랜치는 구현이 걷어내진 뼈대라
-`src/main.tsx` 도 `Dockerfile` 도 없습니다. 그래서 옵션 없이 `deploy.sh` 를 돌리면
-4단계에서 이렇게 멈춥니다.
+이 저장소의 커밋 하나가 **"프론트 A + 백엔드 B"** 조합 하나를 기록합니다. 그래서 옵션 없이
+`deploy.sh` 를 돌리면 커밋에 박힌 그 조합 그대로 뜨고, 롤백도 조합 단위로 됩니다.
 
-```
-⛔ bulchimbeon-frontend 에 Dockerfile 이 없다 — 이 브랜치로는 web 을 빌드할 수 없다.
-   배포용 브랜치를 지정해라:
-     sh scripts/deploy.sh --frontend feat/docker-serving
-```
+⛔ `--backend` · `--frontend` 로 잠깐 옮긴 상태를 **커밋하지 마세요.** 기록이 깨져
+어느 조합으로 돌아가야 하는지 알 수 없게 됩니다. 스크립트는 끝에서 포인터가 움직였는지
+경고만 하고 `git add` 는 하지 않습니다. 되돌리려면
+`git submodule update --init --recursive` 입니다.
 
-⛔ 그렇게 옮긴 상태를 커밋하지 마세요. 이 저장소의 프론트 포인터는 `main` 으로 둡니다.
-`git status` 에 `bulchimbeon-frontend` 가 뜨면 그게 신호이고,
-`git submodule update --init --recursive` 로 되돌립니다.
+> 예전에는 프론트 `main` 이 구현을 걷어낸 뼈대라 `Dockerfile` 이 없어서 배포할 때마다
+> 다른 브랜치를 지정해야 했습니다. 프론트 PR #2(`woojin` 병합) 이후로는 `main` 에 구현과
+> `Dockerfile` 이 다 들어와서, 옵션 없이 그냥 돌리면 됩니다.
 
 ### 막혔을 때
 

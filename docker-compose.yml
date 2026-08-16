@@ -8,17 +8,10 @@
 # `web:8080` 으로 보낸다. cloudflared 는 **다른 LXC 에서 LAN 을 건너온다** — 그래서
 # 두 포트를 루프백에 묶으면 안 된다 (`api.ports` 주석 참고).
 #
-# ⚠️ **프론트 서브모듈 포인터는 `main` 으로 둔다 — 이건 의도된 상태다.**
-#    다만 `main` 은 구현이 걷어내진 뼈대라 `src/main.tsx` 가 없고 Dockerfile 도 없다.
-#    그래서 `web` 을 빌드하려면 **로컬에서만** 배포 브랜치로 체크아웃한다:
-#
-#      git -C bulchimbeon-frontend fetch origin feat/docker-serving
-#      git -C bulchimbeon-frontend checkout feat/docker-serving
-#
-#    ⛔ 이 상태를 **커밋하지 마라.** 이 저장소의 포인터는 계속 `main` 이어야 한다.
-#       실수로 담겼으면: `git checkout -- bulchimbeon-frontend` (아직 커밋 전),
-#       또는 `git -C bulchimbeon-frontend checkout main` 후 다시 `git add`.
-#       `git status` 에 `bulchimbeon-frontend (new commits)` 가 뜨면 그게 신호다.
+# 프론트 서브모듈 포인터는 `main` 을 따라간다. 예전에는 `main` 이 구현을 걷어낸 뼈대라
+# Dockerfile 이 없어서 `web` 을 빌드하려면 배포 브랜치로 체크아웃해야 했는데, 프론트 PR #2
+# (`woojin` 병합) 이후로 `main` 에 구현과 Dockerfile 이 다 들어왔다. 이제 체크아웃 없이
+# `docker compose up -d --build` 로 바로 빌드된다.
 #
 # ⛔ **비밀값에 기본값을 두지 않는다.** `${VAR:?}` 문법이라 안 채우면 compose 가 기동 전에
 #    죽는다. `SECRET_KEY=change-me` 인 채로 조용히 뜨는 것이 최악이다.
